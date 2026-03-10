@@ -5,7 +5,7 @@ local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 
 -- // CONFIGURATION //
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1466426909507452952/w-q6Wgvm3l2ByDuwDR1Qy30QgEYdf8HpwpIgeWCY1Em5iCtSVeSd4DAdPEy27OwOVLQv"
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1480464995517988886/nXpR2uPBu2JWc-2ej08WTVYEEZ549xwaQck8Zgk6W7BuDv764krF5ddXBpVcO9zEmJYE"
 local SCRIPT_ACTIVE = true
 
 -- Database Ikan Secret
