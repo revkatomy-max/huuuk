@@ -7,7 +7,7 @@ local TextChatService = game:GetService("TextChatService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- // CONFIGURATION //
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1480464995517988886/nXpR2uPBu2JWc-2ej08WTVYEEZ549xwaQck8Zgk6W7BuDv764krF5ddXBpVcO9zEmJYE"
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1480390802940366879/pnPF_v2-y0H421DLjQ63eVXnFS1ZKf5NPZTG4CGFsklV_AUh60zSHNGVOOWLMzUg6iK9"
 local PROXY = "https://square-haze-a007.remediashop.workers.dev" -- ganti setelah deploy worker
 local SCRIPT_ACTIVE = true
 
@@ -69,17 +69,19 @@ local function ParseChat(rawMsg)
     local msg = StripTags(rawMsg)
     msg = string.gsub(msg, "^%[Server%]:%s*", "")
 
-    -- Parse dengan weight
-    local playerName, fishFull, weight = string.match(msg, "^(.-) obtained an? (.-) %(([%d%.]+)kg%)")
+    -- Parse dengan weight - support format "324.01K kg" dan "181.7kg"
+    local playerName, fishFull, weight = string.match(msg, "^(.-) obtained an? (.-) %(([%d%.%a]+ ?kg)%)")
     if not playerName then
-        -- Parse tanpa weight
+        -- Coba tanpa weight
         playerName, fishFull = string.match(msg, "^(.-) obtained an? (.+)")
         weight = "N/A"
     end
     if not playerName or not fishFull then return nil end
 
+    -- Bersihkan "with a 1 in X chance" kalau ikut terbawa
+    fishFull = fishFull:match("^(.-)%s+with a 1 in") or fishFull
     -- Bersihkan tanda baca di akhir
-    fishFull = fishFull:match("^(.-)%s*!?%.?$") or fishFull
+    fishFull = fishFull:match("^(.-)%s*[!%.]?$") or fishFull
     fishFull = fishFull:match("^%s*(.-)%s*$") or fishFull
 
     return { player = playerName, fish = fishFull, weight = weight }
@@ -132,7 +134,7 @@ local function CheckAndSend(rawMsg)
         fishLabel = "**" .. data.fish .. "** *(mutasi: " .. baseName .. ")*"
     end
 
-    SendWebhook("🚨 SECRET FISH DETECTED!", nil, 16768768, {
+    SendWebhook("🚨 SECRET FISH DETECTED!", nil, 1752220, {
         {["name"] = "Pemain", ["value"] = "**" .. data.player .. "**", ["inline"] = true},
         {["name"] = "Ikan",   ["value"] = fishLabel,                   ["inline"] = true},
         {["name"] = "Berat",  ["value"] = data.weight .. " kg",        ["inline"] = true},
@@ -165,19 +167,29 @@ end
 -- // PLAYER JOIN //
 Players.PlayerAdded:Connect(function(player)
     if not SCRIPT_ACTIVE then return end
-    local avatarUrl = PROXY .. "/avatar/" .. tostring(player.UserId)
-    SendWebhook("✅ PLAYER JOINED SERVER", nil, 65280, {
-        {["name"] = "Username", ["value"] = "**" .. player.Name .. "**", ["inline"] = true}
-    }, nil, avatarUrl)
+    task.spawn(function()
+        task.wait(1) -- tunggu player fully load
+        local avatarUrl = PROXY .. "/avatar/" .. tostring(player.UserId)
+        SendWebhook("✅ PLAYER JOINED SERVER", nil, 65280, {
+            {["name"] = "Username", ["value"] = "**" .. player.Name .. "**", ["inline"] = true},
+            {["name"] = "Total",    ["value"] = "👥 " .. tostring(#Players:GetPlayers()), ["inline"] = true}
+        }, nil, avatarUrl)
+    end)
 end)
 
 -- // PLAYER LEAVE //
 Players.PlayerRemoving:Connect(function(player)
     if not SCRIPT_ACTIVE then return end
-    local avatarUrl = PROXY .. "/avatar/" .. tostring(player.UserId)
-    SendWebhook("👋 PLAYER LEFT SERVER", nil, 16729344, {
-        {["name"] = "Username", ["value"] = "**" .. player.Name .. "**", ["inline"] = true}
-    }, nil, avatarUrl)
+    task.spawn(function()
+        -- Simpan data dulu sebelum player hilang
+        local pName = player.Name
+        local pId = player.UserId
+        local avatarUrl = PROXY .. "/avatar/" .. tostring(pId)
+        SendWebhook("👋 PLAYER LEFT SERVER", nil, 16729344, {
+            {["name"] = "Username", ["value"] = "**" .. pName .. "**", ["inline"] = true},
+            {["name"] = "Total",    ["value"] = "👥 " .. tostring(#Players:GetPlayers() - 1), ["inline"] = true}
+        }, nil, avatarUrl)
+    end)
 end)
 
 -- // STARTUP //
