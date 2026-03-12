@@ -7,7 +7,7 @@ local TextChatService = game:GetService("TextChatService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- // CONFIGURATION //
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1480390802940366879/pnPF_v2-y0H421DLjQ63eVXnFS1ZKf5NPZTG4CGFsklV_AUh60zSHNGVOOWLMzUg6iK9"
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1480464995517988886/nXpR2uPBu2JWc-2ej08WTVYEEZ549xwaQck8Zgk6W7BuDv764krF5ddXBpVcO9zEmJYE"
 local PROXY = "https://square-haze-a007.remediashop.workers.dev" -- ganti setelah deploy worker
 local SCRIPT_ACTIVE = true
 
