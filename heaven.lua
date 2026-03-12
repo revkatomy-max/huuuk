@@ -1,14 +1,17 @@
--- // BLOX Gank
+-- // BLOX Gank Server Monitor //
+-- Discord @bloxgank
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
+local TextChatService = game:GetService("TextChatService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- // CONFIGURATION //
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1480464995517988886/nXpR2uPBu2JWc-2ej08WTVYEEZ549xwaQck8Zgk6W7BuDv764krF5ddXBpVcO9zEmJYE"
-local PROXY = "https://square-haze-a007.remediashop.workers.dev"
+local PROXY = "square-haze-a007.remediashop.workers.dev" -- ganti setelah deploy worker
 local SCRIPT_ACTIVE = true
 
--- Database Ikan Secret (untuk ambil image ikan)
+-- // DATABASE IKAN SECRET //
 local SecretFishData = {
     ["Crystal Crab"] = 18335072046, ["Orca"] = 18335061483, ["Zombie Shark"] = 18335056722,
     ["Zombie Megalodon"] = 18335056551, ["Dead Zombie Shark"] = 18335056722, ["Blob Shark"] = 18335068212,
@@ -55,26 +58,109 @@ local function SendWebhook(title, description, color, fields, imageUrl, thumbUrl
     end)
 end
 
--- // SECRET FISH MONITOR //
-local function WatchForFish(player)
-    player.CharacterAdded:Connect(function()
-        local bp = player:WaitForChild("Backpack", 15)
-        if bp then
-            bp.ChildAdded:Connect(function(item)
-                local fishId = SecretFishData[item.Name]
-                if fishId then
-                    local fishImg = PROXY .. "/asset/" .. tostring(fishId)
-                    local avatarUrl = PROXY .. "/avatar/" .. tostring(player.UserId)
-                    SendWebhook("🚨 SECRET FISH DETECTED!", nil, 16768768, {
-                        {["name"] = "Pemain", ["value"] = "**" .. player.Name .. "**", ["inline"] = true},
-                        {["name"] = "Ikan",   ["value"] = "**" .. item.Name .. "**",   ["inline"] = true}
-                    }, fishImg, avatarUrl)
-                end
-            end)
-        end
-    end)
+-- // STRIP HTML TAGS (dari XAL) //
+local function StripTags(str)
+    return string.gsub(str, "<[^>]+>", "")
 end
 
+-- // PARSE CHAT SERVER (dari XAL, lebih robust) //
+-- Support format: "[Server]: Player obtained a Fish (181.7kg) with a 1 in 5K chance!"
+local function ParseChat(rawMsg)
+    local msg = StripTags(rawMsg)
+    msg = string.gsub(msg, "^%[Server%]:%s*", "")
+
+    -- Parse dengan weight
+    local playerName, fishFull, weight = string.match(msg, "^(.-) obtained an? (.-) %(([%d%.]+)kg%)")
+    if not playerName then
+        -- Parse tanpa weight
+        playerName, fishFull = string.match(msg, "^(.-) obtained an? (.+)")
+        weight = "N/A"
+    end
+    if not playerName or not fishFull then return nil end
+
+    -- Bersihkan tanda baca di akhir
+    fishFull = fishFull:match("^(.-)%s*!?%.?$") or fishFull
+    fishFull = fishFull:match("^%s*(.-)%s*$") or fishFull
+
+    return { player = playerName, fish = fishFull, weight = weight }
+end
+
+-- // CEK SECRET FISH + SUPPORT MUTASI //
+local function FindSecretFish(fishName)
+    local lower = string.lower(fishName)
+    -- Exact match dulu
+    if SecretFishData[fishName] then
+        return SecretFishData[fishName], fishName, nil
+    end
+    -- Pattern match untuk mutasi (nama base ada di dalam nama ikan)
+    for baseName, fishId in pairs(SecretFishData) do
+        if string.find(lower, string.lower(baseName), 1, true) then
+            -- Extract prefix mutasi
+            local s = string.find(lower, string.lower(baseName), 1, true)
+            local mutasi = nil
+            if s and s > 1 then
+                mutasi = fishName:sub(1, s - 1):match("^%s*(.-)%s*$")
+                if mutasi == "" then mutasi = nil end
+            end
+            return fishId, baseName, mutasi
+        end
+    end
+    return nil, nil, nil
+end
+
+-- // PROSES PESAN CHAT SERVER //
+local function CheckAndSend(rawMsg)
+    if not SCRIPT_ACTIVE then return end
+
+    local lowerMsg = string.lower(rawMsg)
+    if not string.find(lowerMsg, "obtained") then return end
+
+    local data = ParseChat(rawMsg)
+    if not data then return end
+
+    local fishId, baseName, mutasi = FindSecretFish(data.fish)
+    if not fishId then return end
+
+    -- Image ikan dan avatar player
+    local fishImg = PROXY .. "/asset/" .. tostring(fishId)
+    local targetPlayer = Players:FindFirstChild(data.player)
+    local avatarUrl = targetPlayer and (PROXY .. "/avatar/" .. tostring(targetPlayer.UserId)) or nil
+
+    -- Label ikan
+    local fishLabel = "**" .. data.fish .. "**"
+    if mutasi then
+        fishLabel = "**" .. data.fish .. "** *(mutasi: " .. baseName .. ")*"
+    end
+
+    SendWebhook("🚨 SECRET FISH DETECTED!", nil, 16768768, {
+        {["name"] = "Pemain", ["value"] = "**" .. data.player .. "**", ["inline"] = true},
+        {["name"] = "Ikan",   ["value"] = fishLabel,                   ["inline"] = true},
+        {["name"] = "Berat",  ["value"] = data.weight .. " kg",        ["inline"] = true},
+    }, fishImg, avatarUrl)
+end
+
+-- // HOOK CHAT SERVER //
+local function HookChat()
+    -- TextChatService (sistem baru Roblox)
+    if TextChatService then
+        TextChatService.MessageReceived:Connect(function(msg)
+            if msg.TextSource == nil then -- pesan sistem tidak punya TextSource
+                CheckAndSend(msg.Text or "")
+            end
+        end)
+    end
+
+    -- Fallback: sistem chat lama
+    local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+    if chatEvents then
+        local onMessage = chatEvents:FindFirstChild("OnMessageDoneFiltering")
+        if onMessage then
+            onMessage.OnClientEvent:Connect(function(d)
+                if d and d.Message then CheckAndSend(d.Message) end
+            end)
+        end
+    end
+end
 
 -- // PLAYER JOIN //
 Players.PlayerAdded:Connect(function(player)
@@ -88,11 +174,9 @@ end)
 -- // PLAYER LEAVE //
 Players.PlayerRemoving:Connect(function(player)
     if not SCRIPT_ACTIVE then return end
-    local pName = player.Name
-    local pId = player.UserId
-    local avatarUrl = PROXY .. "/avatar/" .. tostring(pId)
+    local avatarUrl = PROXY .. "/avatar/" .. tostring(player.UserId)
     SendWebhook("👋 PLAYER LEFT SERVER", nil, 16729344, {
-        {["name"] = "Username", ["value"] = "**" .. pName .. "**", ["inline"] = true}
+        {["name"] = "Username", ["value"] = "**" .. player.Name .. "**", ["inline"] = true}
     }, nil, avatarUrl)
 end)
 
@@ -111,5 +195,4 @@ end
 
 -- // INITIALIZE //
 Startup()
-for _, p in ipairs(Players:GetPlayers()) do WatchForFish(p) end
-Players.PlayerAdded:Connect(WatchForFish)
+HookChat()
