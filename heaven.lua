@@ -8,7 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- // CONFIGURATION //
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1480464995517988886/nXpR2uPBu2JWc-2ej08WTVYEEZ549xwaQck8Zgk6W7BuDv764krF5ddXBpVcO9zEmJYE"
-local PROXY = "square-haze-a007.remediashop.workers.dev" -- ganti setelah deploy worker
+local PROXY = "https://square-haze-a007.remediashop.workers.dev" -- ganti setelah deploy worker
 local SCRIPT_ACTIVE = true
 
 -- // DATABASE IKAN SECRET //
