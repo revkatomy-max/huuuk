@@ -11,26 +11,25 @@ local WEBHOOK_URL = "https://discord.com/api/webhooks/1480464995517988886/nXpR2u
 local PROXY = "https://square-haze-a007.remediashop.workers.dev"
 local SCRIPT_ACTIVE = true
 
--- // DATABASE IKAN SECRET //
-local SecretFishData = {
-    ["Crystal Crab"] = 18335072046, ["Orca"] = 18335061483, ["Zombie Shark"] = 18335056722,
-    ["Zombie Megalodon"] = 18335056551, ["Dead Zombie Shark"] = 18335056722, ["Blob Shark"] = 18335068212,
-    ["Ghost Shark"] = 18335059639, ["Skeleton Narwhal"] = 18335057177, ["Ghost Worm Fish"] = 18335059511,
-    ["Worm Fish"] = 18335057406, ["Megalodon"] = 18335063073, ["1x1x1x1 Comet Shark"] = 18335068832,
-    ["Bloodmoon Whale"] = 18335067980, ["Lochness Monster"] = 18335063708, ["Monster Shark"] = 18335062145,
-    ["Eerie Shark"] = 18335060416, ["Great Whale"] = 18335058867, ["Frostborn Shark"] = 18335059957,
-    ["Armored Shark"] = 18335068417, ["Scare"] = 18335058097, ["Queen Crab"] = 18335058252,
-    ["King Crab"] = 18335064431, ["Cryoshade Glider"] = 18335066928, ["Panther Eel"] = 18335060799,
-    ["Giant Squid"] = 18335059345, ["Depthseeker Ray"] = 18335066551, ["Robot Kraken"] = 18335058448,
-    ["Mosasaur Shark"] = 18335061981, ["King Jelly"] = 18335064243, ["Bone Whale"] = 18335067645,
-    ["Elshark Gran Maja"] = 18335060241, ["Elpirate Gran Maja"] = 18335060241, ["Ancient Whale"] = 18335068612,
-    ["Gladiator Shark"] = 18335059068, ["Ancient Lochness Monster"] = 18335063708, ["Talon Serpent"] = 18335057777,
-    ["Hacker Shark"] = 18335059223, ["ElRetro Gran Maja"] = 18335060241, ["Strawberry Choc Megalodon"] = 18335063073,
-    ["Krampus Shark"] = 18335062145, ["Emerald Winter Whale"] = 18335058867, ["Winter Frost Shark"] = 18335059957,
-    ["Icebreaker Whale"] = 18335067645, ["Leviathan"] = 18335063983, ["Pirate Megalodon"] = 18335063073,
-    ["Viridis Lurker"] = 18335060799, ["Cursed Kraken"] = 18335058448, ["Ancient Magma Whale"] = 18335068612,
-    ["Rainbow Comet Shark"] = 18335118712, ["Love Nessie"] = 18335063708, ["Broken Heart Nessie"] = 18335063708
+-- // DATABASE NAMA SECRET FISH //
+local SecretFishList = {
+    "Crystal Crab", "Orca", "Zombie Shark", "Zombie Megalodon", "Dead Zombie Shark",
+    "Blob Shark", "Ghost Shark", "Skeleton Narwhal", "Ghost Worm Fish", "Worm Fish",
+    "Megalodon", "1x1x1x1 Comet Shark", "Bloodmoon Whale", "Lochness Monster",
+    "Monster Shark", "Eerie Shark", "Great Whale", "Frostborn Shark", "Armored Shark",
+    "Scare", "Queen Crab", "King Crab", "Cryoshade Glider", "Panther Eel",
+    "Giant Squid", "Depthseeker Ray", "Robot Kraken", "Mosasaur Shark", "King Jelly",
+    "Bone Whale", "Elshark Gran Maja", "Elpirate Gran Maja", "Ancient Whale",
+    "Gladiator Shark", "Ancient Lochness Monster", "Talon Serpent", "Hacker Shark",
+    "ElRetro Gran Maja", "Strawberry Choc Megalodon", "Krampus Shark",
+    "Emerald Winter Whale", "Winter Frost Shark", "Icebreaker Whale", "Leviathan",
+    "Pirate Megalodon", "Viridis Lurker", "Cursed Kraken", "Ancient Magma Whale",
+    "Rainbow Comet Shark", "Love Nessie", "Broken Heart Nessie"
 }
+
+-- // CACHE: simpan imageId dari backpack monitor //
+-- key = nama ikan base, value = imageId dari tool
+local FishImageCache = {}
 
 -- // WEBHOOK SENDER //
 local function SendWebhook(title, description, color, fields, imageUrl, thumbUrl)
@@ -63,13 +62,48 @@ local function StripTags(str)
     return string.gsub(str, "<[^>]+>", "")
 end
 
+-- // CEK SECRET FISH + SUPPORT MUTASI //
+local function FindSecretFish(fishName)
+    local lower = string.lower(fishName)
+    for _, baseName in ipairs(SecretFishList) do
+        if string.find(lower, string.lower(baseName), 1, true) then
+            local s = string.find(lower, string.lower(baseName), 1, true)
+            local mutasi = nil
+            if s and s > 1 then
+                mutasi = fishName:sub(1, s - 1):match("^%s*(.-)%s*$")
+                if mutasi == "" then mutasi = nil end
+            end
+            return baseName, mutasi
+        end
+    end
+    return nil, nil
+end
+
+-- // AMBIL IMAGE DARI TOOL DI BACKPACK //
+local function GetFishImageId(item)
+    -- Cari TextureId atau ImageId dari descendants tool
+    for _, desc in ipairs(item:GetDescendants()) do
+        local ok, val = pcall(function()
+            if desc:IsA("SpecialMesh") then return desc.TextureId
+            elseif desc:IsA("Decal") or desc:IsA("Texture") then return desc.Texture
+            elseif desc:IsA("ImageLabel") or desc:IsA("ImageButton") then return desc.Image
+            end
+            return nil
+        end)
+        if ok and val and val ~= "" and val ~= "rbxasset://" then
+            -- Ambil angkanya saja
+            local id = tostring(val):match("%d+")
+            if id then return id end
+        end
+    end
+    return nil
+end
+
 -- // PARSE CHAT SERVER //
--- Format: "[Server]: Player obtained a Fish (181.7kg) with a 1 in 5K chance!"
 local function ParseChat(rawMsg)
     local msg = StripTags(rawMsg)
     msg = string.gsub(msg, "^%[Server%]:%s*", "")
 
-    -- Parse dengan weight - support "324.01K kg" dan "181.7kg"
     local playerName, fishFull, weight = string.match(msg, "^(.-) obtained an? (.-) %(([%d%.%a]+ ?kg)%)")
     if not playerName then
         playerName, fishFull = string.match(msg, "^(.-) obtained an? (.+)")
@@ -81,37 +115,15 @@ local function ParseChat(rawMsg)
     playerName = playerName:match("%[%a+%]:%s*(.+)") or playerName
     playerName = playerName:match("^%s*(.-)%s*$") or playerName
 
-    -- Normalize weight - trim spasi saja, jangan strip "kg"
+    -- Normalize weight
     weight = weight:match("^%s*(.-)%s*$") or weight
 
-    -- Bersihkan "with a 1 in X chance" kalau ikut terbawa ke nama ikan
+    -- Bersihkan nama ikan
     fishFull = fishFull:match("^(.-)%s+with a 1 in") or fishFull
     fishFull = fishFull:match("^(.-)%s*[!%.]?$") or fishFull
     fishFull = fishFull:match("^%s*(.-)%s*$") or fishFull
 
     return { player = playerName, fish = fishFull, weight = weight }
-end
-
--- // CEK SECRET FISH + SUPPORT MUTASI //
-local function FindSecretFish(fishName)
-    local lower = string.lower(fishName)
-    -- Exact match dulu
-    if SecretFishData[fishName] then
-        return SecretFishData[fishName], fishName, nil
-    end
-    -- Pattern match untuk mutasi
-    for baseName, fishId in pairs(SecretFishData) do
-        if string.find(lower, string.lower(baseName), 1, true) then
-            local s = string.find(lower, string.lower(baseName), 1, true)
-            local mutasi = nil
-            if s and s > 1 then
-                mutasi = fishName:sub(1, s - 1):match("^%s*(.-)%s*$")
-                if mutasi == "" then mutasi = nil end
-            end
-            return fishId, baseName, mutasi
-        end
-    end
-    return nil, nil, nil
 end
 
 -- // PROSES PESAN CHAT SERVER //
@@ -122,16 +134,19 @@ local function CheckAndSend(rawMsg)
     local data = ParseChat(rawMsg)
     if not data then return end
 
-    local fishId, baseName, mutasi = FindSecretFish(data.fish)
-    if not fishId then return end
-
-    -- Image ikan (thumbnail = pojok kanan) + image besar di bawah
-    local fishThumb = PROXY .. "/asset/" .. tostring(fishId)
-    local fishImage = PROXY .. "/asset/" .. tostring(fishId)
+    local baseName, mutasi = FindSecretFish(data.fish)
+    if not baseName then return end
 
     -- Avatar player
     local targetPlayer = Players:FindFirstChild(data.player)
     local avatarUrl = targetPlayer and (PROXY .. "/avatar/" .. tostring(targetPlayer.UserId)) or nil
+
+    -- Cek cache imageId dari backpack monitor
+    local imageUrl = nil
+    local cachedId = FishImageCache[baseName]
+    if cachedId then
+        imageUrl = PROXY .. "/asset/" .. cachedId
+    end
 
     -- Label ikan
     local fishLabel = "**" .. data.fish .. "**"
@@ -143,12 +158,37 @@ local function CheckAndSend(rawMsg)
         {["name"] = "Pemain", ["value"] = "**" .. data.player .. "**", ["inline"] = true},
         {["name"] = "Ikan",   ["value"] = fishLabel,                   ["inline"] = true},
         {["name"] = "Berat",  ["value"] = data.weight,                 ["inline"] = true},
-    }, fishImage, fishThumb)
+    }, imageUrl, avatarUrl)
+end
+
+-- // BACKPACK MONITOR — ambil imageId dari tool //
+local function WatchBackpack(player, bp)
+    bp.ChildAdded:Connect(function(item)
+        task.wait(0.1) -- tunggu item fully loaded
+        local baseName, _ = FindSecretFish(item.Name)
+        if baseName and not FishImageCache[baseName] then
+            local imgId = GetFishImageId(item)
+            if imgId then
+                FishImageCache[baseName] = imgId
+                print("BLOX Gank: Cached image for " .. baseName .. " = " .. imgId)
+            end
+        end
+    end)
+end
+
+local function WatchForFish(player)
+    -- Cek backpack yang sudah ada
+    local bp = player:FindFirstChild("Backpack")
+    if bp then WatchBackpack(player, bp) end
+    -- Listen respawn
+    player.CharacterAdded:Connect(function()
+        local newBp = player:WaitForChild("Backpack", 15)
+        if newBp then WatchBackpack(player, newBp) end
+    end)
 end
 
 -- // HOOK CHAT SERVER //
 local function HookChat()
-    -- TextChatService (sistem baru Roblox)
     if TextChatService then
         TextChatService.MessageReceived:Connect(function(msg)
             if msg.TextSource == nil then
@@ -179,6 +219,7 @@ Players.PlayerAdded:Connect(function(player)
             {["name"] = "Total",    ["value"] = "👥 " .. tostring(#Players:GetPlayers()), ["inline"] = true}
         }, nil, avatarUrl)
     end)
+    WatchForFish(player)
 end)
 
 -- // PLAYER LEAVE //
@@ -201,8 +242,8 @@ local function Startup()
     local names = {}
     for _, p in ipairs(allPlayers) do table.insert(names, p.Name) end
     SendWebhook("🚀 WEBHOOK STARTED", nil, 65280, {
-        {["name"] = "Host",          ["value"] = "👤 " .. Players.LocalPlayer.Name,        ["inline"] = true},
-        {["name"] = "Total Player",  ["value"] = "👥 " .. tostring(#allPlayers),            ["inline"] = true},
+        {["name"] = "Host",          ["value"] = "👤 " .. Players.LocalPlayer.Name,            ["inline"] = true},
+        {["name"] = "Total Player",  ["value"] = "👥 " .. tostring(#allPlayers),                ["inline"] = true},
         {["name"] = "Daftar Player", ["value"] = "```\n" .. table.concat(names, ", ") .. "```", ["inline"] = false}
     })
     StarterGui:SetCore("SendNotification", {Title = "BLOX Gank Webhook Active", Text = "Monitoring Secret Fish & Player Activity", Duration = 5})
@@ -211,3 +252,4 @@ end
 -- // INITIALIZE //
 Startup()
 HookChat()
+for _, p in ipairs(Players:GetPlayers()) do WatchForFish(p) end
