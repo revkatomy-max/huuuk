@@ -10,7 +10,6 @@ local TweenService = game:GetService("TweenService")
 
 -- // CONFIGURATION //
 local WEBHOOK_URL = ""
-local DISCORD_ID = "" -- Discord user ID untuk di-tag
 local PROXY = "https://square-haze-a007.remediashop.workers.dev"
 local SCRIPT_ACTIVE = false
 
@@ -33,8 +32,7 @@ local SecretFishList = {
 local FishImageCache = {}
 
 -- // WEBHOOK SENDER //
--- pingOnSecret: kalau true, tag Discord user di pesan
-local function SendWebhook(title, description, color, fields, imageUrl, thumbUrl, pingOnSecret)
+local function SendWebhook(title, description, color, fields, imageUrl, thumbUrl)
     local requestFunc = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
     if not requestFunc then return end
     local embed = {
@@ -47,21 +45,13 @@ local function SendWebhook(title, description, color, fields, imageUrl, thumbUrl
     }
     if imageUrl then embed["image"] = {["url"] = imageUrl} end
     if thumbUrl then embed["thumbnail"] = {["url"] = thumbUrl} end
-    -- Tag Discord user kalau ada ID dan ini secret fish
-    local content = ""
-    if pingOnSecret and DISCORD_ID ~= "" then
-        content = "<@" .. DISCORD_ID .. ">"
-    end
     task.spawn(function()
         pcall(function()
             requestFunc({
                 Url = WEBHOOK_URL,
                 Method = "POST",
                 Headers = {["Content-Type"] = "application/json"},
-                Body = HttpService:JSONEncode({
-                    ["content"] = content,
-                    ["embeds"] = {embed}
-                })
+                Body = HttpService:JSONEncode({["embeds"] = {embed}})
             })
         end)
     end)
@@ -143,7 +133,7 @@ local function CheckAndSend(rawMsg)
         {["name"] = "Pemain", ["value"] = "**" .. data.player .. "**", ["inline"] = true},
         {["name"] = "Ikan",   ["value"] = fishLabel,                   ["inline"] = true},
         {["name"] = "Berat",  ["value"] = data.weight,                 ["inline"] = true},
-    }, imageUrl, avatarUrl, true)
+    }, imageUrl, avatarUrl)
 end
 
 -- // BACKPACK MONITOR //
@@ -233,7 +223,7 @@ local function CreateUI()
     -- Main Frame
     local frame = Instance.new("Frame")
     frame.Name = "Main"
-    frame.Size = UDim2.new(0, 300, 0, 220)
+    frame.Size = UDim2.new(0, 300, 0, 180)
     frame.Position = UDim2.new(0.5, -150, 0.5, -90)
     frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     frame.BorderSizePixel = 0
@@ -259,7 +249,7 @@ local function CreateUI()
     -- Title
     local title = Instance.new("TextLabel")
     title.Text = "🎣 BLOX Gank Monitor"
-    title.Size = UDim2.new(1, -10, 1, 0)
+    title.Size = UDim2.new(1, -80, 1, 0)
     title.Position = UDim2.new(0, 10, 0, 0)
     title.BackgroundTransparency = 1
     title.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -267,6 +257,72 @@ local function CreateUI()
     title.TextSize = 13
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = topBar
+
+    -- Minimize button
+    local minBtn = Instance.new("TextButton")
+    minBtn.Text = "—"
+    minBtn.Size = UDim2.new(0, 28, 0, 22)
+    minBtn.Position = UDim2.new(1, -58, 0.5, -11)
+    minBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    minBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+    minBtn.Font = Enum.Font.GothamBold
+    minBtn.TextSize = 12
+    minBtn.BorderSizePixel = 0
+    minBtn.Parent = topBar
+    Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 4)
+
+    -- Close button
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Text = "✕"
+    closeBtn.Size = UDim2.new(0, 28, 0, 22)
+    closeBtn.Position = UDim2.new(1, -28, 0.5, -11)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 12
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Parent = topBar
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 4)
+
+    -- Minimize logic
+    local isMinimized = false
+    local fullSize = UDim2.new(0, 300, 0, 180)
+    local miniSize = UDim2.new(0, 300, 0, 36)
+
+    minBtn.MouseButton1Click:Connect(function()
+        isMinimized = not isMinimized
+        if isMinimized then
+            TweenService:Create(frame, TweenInfo.new(0.2), {Size = miniSize}):Play()
+            minBtn.Text = "□"
+        else
+            TweenService:Create(frame, TweenInfo.new(0.2), {Size = fullSize}):Play()
+            minBtn.Text = "—"
+        end
+    end)
+
+    -- Close logic
+    closeBtn.MouseButton1Click:Connect(function()
+        TweenService:Create(frame, TweenInfo.new(0.15), {
+            Size = UDim2.new(0, 300, 0, 0),
+            BackgroundTransparency = 1
+        }):Play()
+        task.wait(0.2)
+        gui:Destroy()
+    end)
+
+    -- Hover effects
+    minBtn.MouseEnter:Connect(function()
+        TweenService:Create(minBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(80, 80, 80)}):Play()
+    end)
+    minBtn.MouseLeave:Connect(function()
+        TweenService:Create(minBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}):Play()
+    end)
+    closeBtn.MouseEnter:Connect(function()
+        TweenService:Create(closeBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(230, 70, 70)}):Play()
+    end)
+    closeBtn.MouseLeave:Connect(function()
+        TweenService:Create(closeBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(200, 50, 50)}):Play()
+    end)
 
     -- Draggable
     local dragging, dragStart, startPos
@@ -295,7 +351,7 @@ local function CreateUI()
     -- Status dot + label
     local statusDot = Instance.new("Frame")
     statusDot.Size = UDim2.new(0, 8, 0, 8)
-    statusDot.Position = UDim2.new(0, 16, 0, 90)
+    statusDot.Position = UDim2.new(0, 16, 0, 54)
     statusDot.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
     statusDot.BorderSizePixel = 0
     statusDot.Parent = frame
@@ -304,7 +360,7 @@ local function CreateUI()
     local statusLabel = Instance.new("TextLabel")
     statusLabel.Text = "Tidak Aktif"
     statusLabel.Size = UDim2.new(1, -40, 0, 20)
-    statusLabel.Position = UDim2.new(0, 30, 0, 82)
+    statusLabel.Position = UDim2.new(0, 30, 0, 46)
     statusLabel.BackgroundTransparency = 1
     statusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
     statusLabel.Font = Enum.Font.Gotham
@@ -312,40 +368,11 @@ local function CreateUI()
     statusLabel.TextXAlignment = Enum.TextXAlignment.Left
     statusLabel.Parent = frame
 
-    -- Discord ID input
-    local discordLabel = Instance.new("TextLabel")
-    discordLabel.Text = "Discord ID (opsional, untuk tag)"
-    discordLabel.Size = UDim2.new(1, -24, 0, 16)
-    discordLabel.Position = UDim2.new(0, 12, 0, 50)
-    discordLabel.BackgroundTransparency = 1
-    discordLabel.TextColor3 = Color3.fromRGB(130, 130, 130)
-    discordLabel.Font = Enum.Font.Gotham
-    discordLabel.TextSize = 10
-    discordLabel.TextXAlignment = Enum.TextXAlignment.Left
-    discordLabel.Parent = frame
-
-    local discordInput = Instance.new("TextBox")
-    discordInput.PlaceholderText = "Masukkan Discord User ID..."
-    discordInput.Size = UDim2.new(1, -24, 0, 28)
-    discordInput.Position = UDim2.new(0, 12, 0, 66)
-    discordInput.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-    discordInput.TextColor3 = Color3.fromRGB(220, 220, 220)
-    discordInput.PlaceholderColor3 = Color3.fromRGB(100, 100, 100)
-    discordInput.Font = Enum.Font.Gotham
-    discordInput.TextSize = 10
-    discordInput.ClearTextOnFocus = false
-    discordInput.BorderSizePixel = 0
-    discordInput.Text = ""
-    discordInput.Parent = frame
-    Instance.new("UICorner", discordInput).CornerRadius = UDim.new(0, 6)
-    local discordPad = Instance.new("UIPadding", discordInput)
-    discordPad.PaddingLeft = UDim.new(0, 8)
-
     -- Webhook input
     local inputBox = Instance.new("TextBox")
     inputBox.PlaceholderText = "Paste Discord Webhook URL..."
     inputBox.Size = UDim2.new(1, -24, 0, 34)
-    inputBox.Position = UDim2.new(0, 12, 0, 114)
+    inputBox.Position = UDim2.new(0, 12, 0, 74)
     inputBox.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
     inputBox.TextColor3 = Color3.fromRGB(220, 220, 220)
     inputBox.PlaceholderColor3 = Color3.fromRGB(100, 100, 100)
@@ -364,7 +391,7 @@ local function CreateUI()
     local startBtn = Instance.new("TextButton")
     startBtn.Text = "START MONITORING"
     startBtn.Size = UDim2.new(1, -24, 0, 34)
-    startBtn.Position = UDim2.new(0, 12, 0, 158)
+    startBtn.Position = UDim2.new(0, 12, 0, 118)
     startBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
     startBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     startBtn.Font = Enum.Font.GothamBold
@@ -394,9 +421,6 @@ local function CreateUI()
         end
 
         WEBHOOK_URL = webhookText
-        -- Simpan Discord ID kalau diisi
-        local discordIdText = discordInput.Text:match("^%s*(.-)%s*$")
-        if discordIdText ~= "" then DISCORD_ID = discordIdText end
         SCRIPT_ACTIVE = true
 
         -- Update UI
@@ -406,7 +430,6 @@ local function CreateUI()
         startBtn.Text = "✅ MONITORING AKTIF"
         startBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
         inputBox.TextEditable = false
-        discordInput.TextEditable = false
 
         StartMonitoring()
     end)
