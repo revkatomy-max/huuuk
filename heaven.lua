@@ -5,11 +5,14 @@ local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 local TextChatService = game:GetService("TextChatService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
 
 -- // CONFIGURATION //
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1480464995517988886/nXpR2uPBu2JWc-2ej08WTVYEEZ549xwaQck8Zgk6W7BuDv764krF5ddXBpVcO9zEmJYE"
+local WEBHOOK_URL = ""
+local DISCORD_ID = "" -- Discord user ID untuk di-tag
 local PROXY = "https://square-haze-a007.remediashop.workers.dev"
-local SCRIPT_ACTIVE = true
+local SCRIPT_ACTIVE = false
 
 -- // DATABASE NAMA SECRET FISH //
 local SecretFishList = {
@@ -27,12 +30,11 @@ local SecretFishList = {
     "Rainbow Comet Shark", "Love Nessie", "Broken Heart Nessie"
 }
 
--- // CACHE: simpan imageId dari backpack monitor //
--- key = nama ikan base, value = imageId dari tool
 local FishImageCache = {}
 
 -- // WEBHOOK SENDER //
-local function SendWebhook(title, description, color, fields, imageUrl, thumbUrl)
+-- pingOnSecret: kalau true, tag Discord user di pesan
+local function SendWebhook(title, description, color, fields, imageUrl, thumbUrl, pingOnSecret)
     local requestFunc = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
     if not requestFunc then return end
     local embed = {
@@ -45,13 +47,21 @@ local function SendWebhook(title, description, color, fields, imageUrl, thumbUrl
     }
     if imageUrl then embed["image"] = {["url"] = imageUrl} end
     if thumbUrl then embed["thumbnail"] = {["url"] = thumbUrl} end
+    -- Tag Discord user kalau ada ID dan ini secret fish
+    local content = ""
+    if pingOnSecret and DISCORD_ID ~= "" then
+        content = "<@" .. DISCORD_ID .. ">"
+    end
     task.spawn(function()
         pcall(function()
             requestFunc({
                 Url = WEBHOOK_URL,
                 Method = "POST",
                 Headers = {["Content-Type"] = "application/json"},
-                Body = HttpService:JSONEncode({["embeds"] = {embed}})
+                Body = HttpService:JSONEncode({
+                    ["content"] = content,
+                    ["embeds"] = {embed}
+                })
             })
         end)
     end)
@@ -79,9 +89,8 @@ local function FindSecretFish(fishName)
     return nil, nil
 end
 
--- // AMBIL IMAGE DARI TOOL DI BACKPACK //
+-- // AMBIL IMAGE DARI TOOL //
 local function GetFishImageId(item)
-    -- Cari TextureId atau ImageId dari descendants tool
     for _, desc in ipairs(item:GetDescendants()) do
         local ok, val = pcall(function()
             if desc:IsA("SpecialMesh") then return desc.TextureId
@@ -91,7 +100,6 @@ local function GetFishImageId(item)
             return nil
         end)
         if ok and val and val ~= "" and val ~= "rbxasset://" then
-            -- Ambil angkanya saja
             local id = tostring(val):match("%d+")
             if id then return id end
         end
@@ -103,26 +111,18 @@ end
 local function ParseChat(rawMsg)
     local msg = StripTags(rawMsg)
     msg = string.gsub(msg, "^%[Server%]:%s*", "")
-
     local playerName, fishFull, weight = string.match(msg, "^(.-) obtained an? (.-) %(([%d%.%a]+ ?kg)%)")
     if not playerName then
         playerName, fishFull = string.match(msg, "^(.-) obtained an? (.+)")
         weight = "N/A"
     end
     if not playerName or not fishFull then return nil end
-
-    -- Hapus prefix [Global]: [Local]: dll
     playerName = playerName:match("%[%a+%]:%s*(.+)") or playerName
     playerName = playerName:match("^%s*(.-)%s*$") or playerName
-
-    -- Normalize weight
     weight = weight:match("^%s*(.-)%s*$") or weight
-
-    -- Bersihkan nama ikan
     fishFull = fishFull:match("^(.-)%s+with a 1 in") or fishFull
     fishFull = fishFull:match("^(.-)%s*[!%.]?$") or fishFull
     fishFull = fishFull:match("^%s*(.-)%s*$") or fishFull
-
     return { player = playerName, fish = fishFull, weight = weight }
 end
 
@@ -130,57 +130,37 @@ end
 local function CheckAndSend(rawMsg)
     if not SCRIPT_ACTIVE then return end
     if not string.find(string.lower(rawMsg), "obtained") then return end
-
     local data = ParseChat(rawMsg)
     if not data then return end
-
     local baseName, mutasi = FindSecretFish(data.fish)
     if not baseName then return end
-
-    -- Avatar player
     local targetPlayer = Players:FindFirstChild(data.player)
     local avatarUrl = targetPlayer and (PROXY .. "/avatar/" .. tostring(targetPlayer.UserId)) or nil
-
-    -- Cek cache imageId dari backpack monitor
-    local imageUrl = nil
-    local cachedId = FishImageCache[baseName]
-    if cachedId then
-        imageUrl = PROXY .. "/asset/" .. cachedId
-    end
-
-    -- Label ikan
+    local imageUrl = FishImageCache[baseName] and (PROXY .. "/asset/" .. FishImageCache[baseName]) or nil
     local fishLabel = "**" .. data.fish .. "**"
-    if mutasi then
-        fishLabel = "**" .. data.fish .. "** *(mutasi: " .. baseName .. ")*"
-    end
-
+    if mutasi then fishLabel = "**" .. data.fish .. "** *(mutasi: " .. baseName .. ")*" end
     SendWebhook("🚨 SECRET FISH DETECTED!", nil, 1752220, {
         {["name"] = "Pemain", ["value"] = "**" .. data.player .. "**", ["inline"] = true},
         {["name"] = "Ikan",   ["value"] = fishLabel,                   ["inline"] = true},
         {["name"] = "Berat",  ["value"] = data.weight,                 ["inline"] = true},
-    }, imageUrl, avatarUrl)
+    }, imageUrl, avatarUrl, true)
 end
 
--- // BACKPACK MONITOR — ambil imageId dari tool //
+-- // BACKPACK MONITOR //
 local function WatchBackpack(player, bp)
     bp.ChildAdded:Connect(function(item)
-        task.wait(0.1) -- tunggu item fully loaded
+        task.wait(0.1)
         local baseName, _ = FindSecretFish(item.Name)
         if baseName and not FishImageCache[baseName] then
             local imgId = GetFishImageId(item)
-            if imgId then
-                FishImageCache[baseName] = imgId
-                print("BLOX Gank: Cached image for " .. baseName .. " = " .. imgId)
-            end
+            if imgId then FishImageCache[baseName] = imgId end
         end
     end)
 end
 
 local function WatchForFish(player)
-    -- Cek backpack yang sudah ada
     local bp = player:FindFirstChild("Backpack")
     if bp then WatchBackpack(player, bp) end
-    -- Listen respawn
     player.CharacterAdded:Connect(function()
         local newBp = player:WaitForChild("Backpack", 15)
         if newBp then WatchBackpack(player, newBp) end
@@ -191,12 +171,9 @@ end
 local function HookChat()
     if TextChatService then
         TextChatService.MessageReceived:Connect(function(msg)
-            if msg.TextSource == nil then
-                CheckAndSend(msg.Text or "")
-            end
+            if msg.TextSource == nil then CheckAndSend(msg.Text or "") end
         end)
     end
-    -- Fallback sistem chat lama
     local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
     if chatEvents then
         local onMessage = chatEvents:FindFirstChild("OnMessageDoneFiltering")
@@ -208,36 +185,8 @@ local function HookChat()
     end
 end
 
--- // PLAYER JOIN //
-Players.PlayerAdded:Connect(function(player)
-    if not SCRIPT_ACTIVE then return end
-    task.spawn(function()
-        task.wait(1)
-        local avatarUrl = PROXY .. "/avatar/" .. tostring(player.UserId)
-        SendWebhook("✅ PLAYER JOINED SERVER", nil, 65280, {
-            {["name"] = "Username", ["value"] = "**" .. player.Name .. "**",              ["inline"] = true},
-            {["name"] = "Total",    ["value"] = "👥 " .. tostring(#Players:GetPlayers()), ["inline"] = true}
-        }, nil, avatarUrl)
-    end)
-    WatchForFish(player)
-end)
-
--- // PLAYER LEAVE //
-Players.PlayerRemoving:Connect(function(player)
-    if not SCRIPT_ACTIVE then return end
-    task.spawn(function()
-        local pName = player.Name
-        local pId = player.UserId
-        local avatarUrl = PROXY .. "/avatar/" .. tostring(pId)
-        SendWebhook("👋 PLAYER LEFT SERVER", nil, 16729344, {
-            {["name"] = "Username", ["value"] = "**" .. pName .. "**",                        ["inline"] = true},
-            {["name"] = "Total",    ["value"] = "👥 " .. tostring(#Players:GetPlayers() - 1), ["inline"] = true}
-        }, nil, avatarUrl)
-    end)
-end)
-
--- // STARTUP //
-local function Startup()
+-- // STARTUP WEBHOOK //
+local function StartMonitoring()
     local allPlayers = Players:GetPlayers()
     local names = {}
     for _, p in ipairs(allPlayers) do table.insert(names, p.Name) end
@@ -246,10 +195,234 @@ local function Startup()
         {["name"] = "Total Player",  ["value"] = "👥 " .. tostring(#allPlayers),                ["inline"] = true},
         {["name"] = "Daftar Player", ["value"] = "```\n" .. table.concat(names, ", ") .. "```", ["inline"] = false}
     })
-    StarterGui:SetCore("SendNotification", {Title = "BLOX Gank Webhook Active", Text = "Monitoring Secret Fish & Player Activity", Duration = 5})
+    HookChat()
+    for _, p in ipairs(Players:GetPlayers()) do WatchForFish(p) end
+    Players.PlayerAdded:Connect(function(player)
+        if not SCRIPT_ACTIVE then return end
+        task.spawn(function()
+            task.wait(1)
+            local avatarUrl = PROXY .. "/avatar/" .. tostring(player.UserId)
+            SendWebhook("✅ PLAYER JOINED SERVER", nil, 65280, {
+                {["name"] = "Username", ["value"] = "**" .. player.Name .. "**",              ["inline"] = true},
+                {["name"] = "Total",    ["value"] = "👥 " .. tostring(#Players:GetPlayers()), ["inline"] = true}
+            }, nil, avatarUrl)
+        end)
+        WatchForFish(player)
+    end)
+    Players.PlayerRemoving:Connect(function(player)
+        if not SCRIPT_ACTIVE then return end
+        task.spawn(function()
+            local pName = player.Name
+            local pId = player.UserId
+            local avatarUrl = PROXY .. "/avatar/" .. tostring(pId)
+            SendWebhook("👋 PLAYER LEFT SERVER", nil, 16729344, {
+                {["name"] = "Username", ["value"] = "**" .. pName .. "**",                        ["inline"] = true},
+                {["name"] = "Total",    ["value"] = "👥 " .. tostring(#Players:GetPlayers() - 1), ["inline"] = true}
+            }, nil, avatarUrl)
+        end)
+    end)
+end
+
+-- // UI //
+local function CreateUI()
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "BloxGankUI"
+    gui.ResetOnSpawn = false
+    gui.Parent = (gethui and gethui()) or CoreGui
+
+    -- Main Frame
+    local frame = Instance.new("Frame")
+    frame.Name = "Main"
+    frame.Size = UDim2.new(0, 300, 0, 220)
+    frame.Position = UDim2.new(0.5, -150, 0.5, -90)
+    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    frame.BorderSizePixel = 0
+    frame.Parent = gui
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+
+    -- Top bar
+    local topBar = Instance.new("Frame")
+    topBar.Size = UDim2.new(1, 0, 0, 36)
+    topBar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    topBar.BorderSizePixel = 0
+    topBar.Parent = frame
+    Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 8)
+
+    -- Fix rounded corners hanya atas
+    local topBarFix = Instance.new("Frame")
+    topBarFix.Size = UDim2.new(1, 0, 0, 8)
+    topBarFix.Position = UDim2.new(0, 0, 1, -8)
+    topBarFix.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    topBarFix.BorderSizePixel = 0
+    topBarFix.Parent = topBar
+
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Text = "🎣 BLOX Gank Monitor"
+    title.Size = UDim2.new(1, -10, 1, 0)
+    title.Position = UDim2.new(0, 10, 0, 0)
+    title.BackgroundTransparency = 1
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 13
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = topBar
+
+    -- Draggable
+    local dragging, dragStart, startPos
+    topBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+        end
+    end)
+    topBar.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    game:GetService("UserInputService").InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    -- Status dot + label
+    local statusDot = Instance.new("Frame")
+    statusDot.Size = UDim2.new(0, 8, 0, 8)
+    statusDot.Position = UDim2.new(0, 16, 0, 90)
+    statusDot.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+    statusDot.BorderSizePixel = 0
+    statusDot.Parent = frame
+    Instance.new("UICorner", statusDot).CornerRadius = UDim.new(1, 0)
+
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Text = "Tidak Aktif"
+    statusLabel.Size = UDim2.new(1, -40, 0, 20)
+    statusLabel.Position = UDim2.new(0, 30, 0, 82)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+    statusLabel.Font = Enum.Font.Gotham
+    statusLabel.TextSize = 11
+    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    statusLabel.Parent = frame
+
+    -- Discord ID input
+    local discordLabel = Instance.new("TextLabel")
+    discordLabel.Text = "Discord ID (opsional, untuk tag)"
+    discordLabel.Size = UDim2.new(1, -24, 0, 16)
+    discordLabel.Position = UDim2.new(0, 12, 0, 50)
+    discordLabel.BackgroundTransparency = 1
+    discordLabel.TextColor3 = Color3.fromRGB(130, 130, 130)
+    discordLabel.Font = Enum.Font.Gotham
+    discordLabel.TextSize = 10
+    discordLabel.TextXAlignment = Enum.TextXAlignment.Left
+    discordLabel.Parent = frame
+
+    local discordInput = Instance.new("TextBox")
+    discordInput.PlaceholderText = "Masukkan Discord User ID..."
+    discordInput.Size = UDim2.new(1, -24, 0, 28)
+    discordInput.Position = UDim2.new(0, 12, 0, 66)
+    discordInput.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    discordInput.TextColor3 = Color3.fromRGB(220, 220, 220)
+    discordInput.PlaceholderColor3 = Color3.fromRGB(100, 100, 100)
+    discordInput.Font = Enum.Font.Gotham
+    discordInput.TextSize = 10
+    discordInput.ClearTextOnFocus = false
+    discordInput.BorderSizePixel = 0
+    discordInput.Text = ""
+    discordInput.Parent = frame
+    Instance.new("UICorner", discordInput).CornerRadius = UDim.new(0, 6)
+    local discordPad = Instance.new("UIPadding", discordInput)
+    discordPad.PaddingLeft = UDim.new(0, 8)
+
+    -- Webhook input
+    local inputBox = Instance.new("TextBox")
+    inputBox.PlaceholderText = "Paste Discord Webhook URL..."
+    inputBox.Size = UDim2.new(1, -24, 0, 34)
+    inputBox.Position = UDim2.new(0, 12, 0, 114)
+    inputBox.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    inputBox.TextColor3 = Color3.fromRGB(220, 220, 220)
+    inputBox.PlaceholderColor3 = Color3.fromRGB(100, 100, 100)
+    inputBox.Font = Enum.Font.Gotham
+    inputBox.TextSize = 10
+    inputBox.ClearTextOnFocus = false
+    inputBox.BorderSizePixel = 0
+    inputBox.Text = ""
+    inputBox.Parent = frame
+    local inputCorner = Instance.new("UICorner", inputBox)
+    inputCorner.CornerRadius = UDim.new(0, 6)
+    local inputPad = Instance.new("UIPadding", inputBox)
+    inputPad.PaddingLeft = UDim.new(0, 8)
+
+    -- Start button
+    local startBtn = Instance.new("TextButton")
+    startBtn.Text = "START MONITORING"
+    startBtn.Size = UDim2.new(1, -24, 0, 34)
+    startBtn.Position = UDim2.new(0, 12, 0, 158)
+    startBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
+    startBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    startBtn.Font = Enum.Font.GothamBold
+    startBtn.TextSize = 12
+    startBtn.BorderSizePixel = 0
+    startBtn.Parent = frame
+    Instance.new("UICorner", startBtn).CornerRadius = UDim.new(0, 6)
+
+    -- Stroke border
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(50, 50, 50)
+    stroke.Thickness = 1
+    stroke.Parent = frame
+
+    -- Button logic
+    startBtn.MouseButton1Click:Connect(function()
+        if SCRIPT_ACTIVE then return end
+
+        local webhookText = inputBox.Text
+        if not webhookText:find("discord.com/api/webhooks") then
+            startBtn.Text = "❌ WEBHOOK INVALID!"
+            startBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+            task.wait(2)
+            startBtn.Text = "START MONITORING"
+            startBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
+            return
+        end
+
+        WEBHOOK_URL = webhookText
+        -- Simpan Discord ID kalau diisi
+        local discordIdText = discordInput.Text:match("^%s*(.-)%s*$")
+        if discordIdText ~= "" then DISCORD_ID = discordIdText end
+        SCRIPT_ACTIVE = true
+
+        -- Update UI
+        statusDot.BackgroundColor3 = Color3.fromRGB(0, 220, 100)
+        statusLabel.Text = "Aktif — Monitoring..."
+        statusLabel.TextColor3 = Color3.fromRGB(0, 220, 100)
+        startBtn.Text = "✅ MONITORING AKTIF"
+        startBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        inputBox.TextEditable = false
+        discordInput.TextEditable = false
+
+        StartMonitoring()
+    end)
+
+    -- Hover effect
+    startBtn.MouseEnter:Connect(function()
+        if not SCRIPT_ACTIVE then
+            TweenService:Create(startBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(0, 210, 120)}):Play()
+        end
+    end)
+    startBtn.MouseLeave:Connect(function()
+        if not SCRIPT_ACTIVE then
+            TweenService:Create(startBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(0, 180, 100)}):Play()
+        end
+    end)
 end
 
 -- // INITIALIZE //
-Startup()
-HookChat()
-for _, p in ipairs(Players:GetPlayers()) do WatchForFish(p) end
+CreateUI()
