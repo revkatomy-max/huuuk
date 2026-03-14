@@ -26,7 +26,18 @@ local SecretFishList = {
     "ElRetro Gran Maja", "Strawberry Choc Megalodon", "Krampus Shark",
     "Emerald Winter Whale", "Winter Frost Shark", "Icebreaker Whale", "Leviathan",
     "Pirate Megalodon", "Viridis Lurker", "Cursed Kraken", "Ancient Magma Whale",
-    "Rainbow Comet Shark", "Love Nessie", "Broken Heart Nessie"
+    "Rainbow Comet Shark", "Love Nessie", "Broken Heart Nessie",
+    -- Forgotten Tier
+    "Sea Eater"
+}
+
+-- // DATABASE RUBY GEMSTONE //
+local RubyList = { "Ruby" }
+
+-- // DATABASE LEGENDARY (khusus mutasi Crystalized) //
+local LegendaryCrystalList = {
+    "Blue Sea Dragon", "Star Snail", "Cute Dumbo",
+    "Blossom Jelly", "Bioluminescent Octopus"
 }
 
 local FishImageCache = {}
@@ -79,6 +90,28 @@ local function FindSecretFish(fishName)
     return nil, nil
 end
 
+-- // CEK RUBY GEMSTONE (harus ada mutasi "Gemstone") //
+local function FindRuby(fishName)
+    local lower = string.lower(fishName)
+    -- Harus mengandung "ruby" DAN "gemstone"
+    if not string.find(lower, "ruby") then return nil end
+    if not string.find(lower, "gemstone") then return nil end
+    return "Ruby"
+end
+
+-- // CEK LEGENDARY CRYSTALIZED //
+local function FindLegendaryCrystal(fishName)
+    local lower = string.lower(fishName)
+    -- Harus ada kata "crystalized" di nama
+    if not string.find(lower, "crystalized") then return nil end
+    for _, name in ipairs(LegendaryCrystalList) do
+        if string.find(lower, string.lower(name), 1, true) then
+            return name
+        end
+    end
+    return nil
+end
+
 -- // AMBIL IMAGE DARI TOOL //
 local function GetFishImageId(item)
     for _, desc in ipairs(item:GetDescendants()) do
@@ -122,10 +155,38 @@ local function CheckAndSend(rawMsg)
     if not string.find(string.lower(rawMsg), "obtained") then return end
     local data = ParseChat(rawMsg)
     if not data then return end
-    local baseName, mutasi = FindSecretFish(data.fish)
-    if not baseName then return end
+
     local targetPlayer = Players:FindFirstChild(data.player)
     local avatarUrl = targetPlayer and (PROXY .. "/avatar/" .. tostring(targetPlayer.UserId)) or nil
+
+    -- // CEK LEGENDARY CRYSTALIZED (prioritas tertinggi) //
+    local legendaryBase = FindLegendaryCrystal(data.fish)
+    if legendaryBase then
+        local imageUrl = FishImageCache[legendaryBase] and (PROXY .. "/asset/" .. FishImageCache[legendaryBase]) or nil
+        SendWebhook("💎 CRYSTALIZED LEGENDARY!", nil, 3407871, {
+            {["name"] = "Pemain",   ["value"] = "**" .. data.player .. "**",  ["inline"] = true},
+            {["name"] = "Ikan",     ["value"] = "**" .. data.fish .. "**",    ["inline"] = true},
+            {["name"] = "Mutasi",   ["value"] = "✨ Crystalized",             ["inline"] = true},
+            {["name"] = "Berat",    ["value"] = data.weight,                  ["inline"] = true},
+        }, imageUrl, avatarUrl)
+        return
+    end
+
+    -- // CEK RUBY GEMSTONE //
+    local rubyBase = FindRuby(data.fish)
+    if rubyBase then
+        local imageUrl = FishImageCache[rubyBase] and (PROXY .. "/asset/" .. FishImageCache[rubyBase]) or nil
+        SendWebhook("💎 RUBY GEMSTONE!", nil, 16753920, {
+            {["name"] = "Pemain", ["value"] = "**" .. data.player .. "**", ["inline"] = true},
+            {["name"] = "Item",   ["value"] = "**" .. data.fish .. "**",   ["inline"] = true},
+            {["name"] = "Berat",  ["value"] = data.weight,                 ["inline"] = true},
+        }, imageUrl, avatarUrl)
+        return
+    end
+
+    -- // CEK SECRET / FORGOTTEN FISH //
+    local baseName, mutasi = FindSecretFish(data.fish)
+    if not baseName then return end
     local imageUrl = FishImageCache[baseName] and (PROXY .. "/asset/" .. FishImageCache[baseName]) or nil
     local fishLabel = "**" .. data.fish .. "**"
     if mutasi then fishLabel = "**" .. data.fish .. "** *(mutasi: " .. baseName .. ")*" end
